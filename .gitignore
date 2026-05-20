@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+*.tsbuildinfo
+
+# env — NEVER commit real secrets
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+logs/
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# coverage
+coverage/
+.nyc_output/
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# misc
+.cache/
+.tmp/

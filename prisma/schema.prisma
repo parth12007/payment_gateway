@@ -1,0 +1,90 @@
+// Prisma schema for Payment Processing System.
+// Phase 1: core payment models.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
+enum PaymentEventType {
+  CREATED
+  ATTEMPT_STARTED
+  ATTEMPT_SUCCEEDED
+  ATTEMPT_FAILED_TRANSIENT
+  ATTEMPT_FAILED_PERMANENT
+  WEBHOOK_RECEIVED
+  STATE_TRANSITIONED
+  RETRY_SCHEDULED
+}
+
+model Payment {
+  id              String        @id @default(uuid()) @db.Uuid
+  merchantId      String        @map("merchant_id")
+  idempotencyKey  String        @map("idempotency_key")
+  requestHash     String        @map("request_hash")
+  amount          BigInt
+  currency        String        @db.Char(3)
+  paymentMethodId String        @map("payment_method_id")
+  customerId      String?       @map("customer_id")
+  description     String?
+  status          PaymentStatus @default(PENDING)
+  attemptCount    Int           @default(0) @map("attempt_count")
+  maxAttempts     Int           @default(3) @map("max_attempts")
+  nextRetryAt     DateTime?     @map("next_retry_at") @db.Timestamptz(6)
+
+  stripePaymentIntentId String? @unique @map("stripe_payment_intent_id")
+  stripeClientSecret    String? @map("stripe_client_secret")
+
+  lastErrorCode    String? @map("last_error_code")
+  lastErrorMessage String? @map("last_error_message")
+
+  // Optimistic-lock counter. Bumped on every state write.
+  version Int @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  events PaymentEvent[]
+
+  @@unique([merchantId, idempotencyKey], name: "payment_merchant_idempotency_unique")
+  @@index([status, nextRetryAt])
+  @@map("payments")
+}
+
+model PaymentEvent {
+  id        String           @id @default(uuid()) @db.Uuid
+  paymentId String           @map("payment_id") @db.Uuid
+  type      PaymentEventType
+  payload   Json             @default("{}") @db.JsonB
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, createdAt])
+  @@map("payment_events")
+}
+
+// One row per Stripe webhook event id. Unique PK gives free dedup of replays.
+model StripeWebhookDelivery {
+  id             String    @id // Stripe event id (evt_…)
+  type           String
+  paymentId      String?   @map("payment_id") @db.Uuid
+  payload        Json      @db.JsonB
+  signatureValid Boolean   @map("signature_valid")
+  receivedAt     DateTime  @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt    DateTime? @map("processed_at") @db.Timestamptz(6)
+
+  @@index([paymentId])
+  @@map("stripe_webhook_deliveries")
+}
